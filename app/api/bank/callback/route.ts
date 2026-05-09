@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   try {
     const redirectUri = 'https://project-jamne.vercel.app/api/bank/callback'
 
-    const tokenRes = await fetch('https://auth.truelayer.com/connect/token', {
+    const tokenRes = await fetch('https://auth.truelayer-sandbox.com/connect/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
@@ -28,7 +28,7 @@ export async function GET(request: Request) {
     const tokens = await tokenRes.json()
     if (!tokens.access_token) return NextResponse.redirect(`${origin}/finance?bank=error`)
 
-    const accountsRes = await fetch('https://api.truelayer.com/data/v1/accounts', {
+    const accountsRes = await fetch('https://api.truelayer-sandbox.com/data/v1/accounts', {
       headers: { Authorization: `Bearer ${tokens.access_token}` },
     })
     const accountsData = await accountsRes.json()
