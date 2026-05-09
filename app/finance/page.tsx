@@ -6,6 +6,7 @@ import { BudgetProgressCard } from '@/components/finance/BudgetProgressCard'
 import { SavingsGoalCard, AddSavingsGoalForm } from '@/components/finance/SavingsGoalCard'
 import { FinanceCharts } from '@/components/finance/FinanceCharts'
 import { IncomeSection } from '@/components/finance/IncomeSection'
+import { BankSyncCard } from '@/components/finance/BankSyncCard'
 import { Badge } from '@/components/ui/badge'
 import { deleteTransaction } from '@/actions/finance'
 import { Trash2 } from 'lucide-react'
@@ -24,6 +25,7 @@ export default async function FinancePage() {
     { data: savingsGoals },
     { data: txns },
     { data: allTxns },
+    { data: bankConnection },
   ] = await Promise.all([
     supabase.from('income_sources').select('*').eq('user_id', user!.id).eq('active', true).order('created_at'),
     supabase.from('budget_plans').select('*, budget_categories(*)').eq('user_id', user!.id)
@@ -33,6 +35,7 @@ export default async function FinancePage() {
       .gte('txn_date', monthStart).order('txn_date', { ascending: false }),
     supabase.from('transactions').select('*').eq('user_id', user!.id)
       .gte('txn_date', sixMonthsAgo.toISOString().split('T')[0]).order('txn_date', { ascending: false }),
+    supabase.from('bank_connections').select('*').eq('user_id', user!.id).eq('provider', 'truelayer').eq('active', true).single(),
   ])
 
   const monthIncome = txns?.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0) ?? 0
@@ -103,7 +106,8 @@ export default async function FinancePage() {
         </TabsContent>
 
         {/* INCOME */}
-        <TabsContent value="income" className="mt-4">
+        <TabsContent value="income" className="mt-4 space-y-4">
+          <BankSyncCard connected={!!bankConnection} lastSynced={bankConnection?.last_synced_at ?? null} />
           <IncomeSection incomeSources={incomeSources ?? []} />
         </TabsContent>
 

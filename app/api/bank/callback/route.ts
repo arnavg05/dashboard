@@ -3,39 +3,47 @@ import { NextResponse } from 'next/server'
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
-  const ref = searchParams.get('ref')
+  const code = searchParams.get('code')
 
-  if (!ref) return NextResponse.redirect(`${origin}/finance?bank=error`)
+  if (!code) return NextResponse.redirect(`${origin}/finance?bank=error`)
 
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.redirect(`${origin}/auth/login`)
 
   try {
-    const secretId = process.env.GOCARDLESS_SECRET_ID!
-    const secretKey = process.env.GOCARDLESS_SECRET_KEY!
+    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/bank/callback`
 
-    const tokenRes = await fetch('https://bankaccountdata.gocardless.com/api/v2/token/new/', {
+    const tokenRes = await fetch('https://auth.truelayer.com/connect/token', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ secret_id: secretId, secret_key: secretKey }),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: process.env.TRUELAYER_CLIENT_ID!,
+        client_secret: process.env.TRUELAYER_CLIENT_SECRET!,
+        redirect_uri: redirectUri,
+        code,
+      }),
     })
-    const { access } = await tokenRes.json()
+    const tokens = await tokenRes.json()
+    if (!tokens.access_token) return NextResponse.redirect(`${origin}/finance?bank=error`)
 
-    // Get requisition details
-    const reqRes = await fetch(`https://bankaccountdata.gocardless.com/api/v2/requisitions/${ref}/`, {
-      headers: { Authorization: `Bearer ${access}` },
+    const accountsRes = await fetch('https://api.truelayer.com/data/v1/accounts', {
+      headers: { Authorization: `Bearer ${tokens.access_token}` },
     })
-    const requisition = await reqRes.json()
+    const accountsData = await accountsRes.json()
+    const accounts: { account_id: string }[] = accountsData.results ?? []
+    if (!accounts.length) return NextResponse.redirect(`${origin}/finance?bank=error`)
 
-    if (requisition.accounts?.length) {
-      await supabase.from('bank_connections').insert({
-        user_id: user.id,
-        institution_id: requisition.institution_id,
-        account_id: requisition.accounts[0],
-        requisition_id: ref,
-      })
-    }
+    // Remove any old connection then insert fresh
+    await supabase.from('bank_connections').delete().eq('user_id', user.id).eq('provider', 'truelayer')
+    await supabase.from('bank_connections').insert({
+      user_id: user.id,
+      provider: 'truelayer',
+      institution_id: tokens.access_token,   // repurposed: stores access token
+      requisition_id: tokens.refresh_token,  // repurposed: stores refresh token
+      account_id: accounts[0].account_id,
+    })
   } catch {
     return NextResponse.redirect(`${origin}/finance?bank=error`)
   }

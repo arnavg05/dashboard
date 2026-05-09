@@ -1,15 +1,15 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
-import { EXPENSE_CATEGORIES } from '@/lib/constants'
 
 function guessCategory(description: string): string {
   const d = description.toLowerCase()
-  if (d.includes('tesco') || d.includes('sainsbury') || d.includes('lidl') || d.includes('aldi') || d.includes('asda') || d.includes('waitrose')) return 'Food & Drink'
-  if (d.includes('uber') || d.includes('transport') || d.includes('tfl') || d.includes('train') || d.includes('bus')) return 'Transport'
-  if (d.includes('netflix') || d.includes('spotify') || d.includes('amazon prime') || d.includes('disney')) return 'Subscriptions'
-  if (d.includes('rent') || d.includes('mortgage') || d.includes('council tax')) return 'Housing'
-  if (d.includes('amazon') || d.includes('ebay') || d.includes('asos')) return 'Shopping'
-  if (d.includes('gym') || d.includes('pharmacy') || d.includes('nhs')) return 'Health'
+  if (d.includes('rewe') || d.includes('edeka') || d.includes('lidl') || d.includes('aldi') || d.includes('penny') || d.includes('netto') || d.includes('tesco') || d.includes('sainsbury') || d.includes('supermarket')) return 'Food & Drink'
+  if (d.includes('uber') || d.includes('bvg') || d.includes('db bahn') || d.includes('deutschebahn') || d.includes('transport') || d.includes('tfl') || d.includes('train') || d.includes('bus')) return 'Transport'
+  if (d.includes('netflix') || d.includes('spotify') || d.includes('amazon prime') || d.includes('disney') || d.includes('youtube')) return 'Subscriptions'
+  if (d.includes('rent') || d.includes('miete') || d.includes('mortgage') || d.includes('council')) return 'Housing'
+  if (d.includes('amazon') || d.includes('ebay') || d.includes('zalando') || d.includes('asos')) return 'Shopping'
+  if (d.includes('gym') || d.includes('pharmacy') || d.includes('apotheke') || d.includes('doctor') || d.includes('arzt')) return 'Health'
+  if (d.includes('restaurant') || d.includes('cafe') || d.includes('mcdonald') || d.includes('döner') || d.includes('pizza')) return 'Eating Out'
   return 'Other'
 }
 
@@ -19,45 +19,60 @@ export async function POST() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { data: connections } = await supabase.from('bank_connections')
-    .select('*').eq('user_id', user.id).eq('active', true)
+    .select('*').eq('user_id', user.id).eq('active', true).eq('provider', 'truelayer')
 
-  if (!connections?.length) return NextResponse.json({ synced: 0 })
-
-  const secretId = process.env.GOCARDLESS_SECRET_ID!
-  const secretKey = process.env.GOCARDLESS_SECRET_KEY!
-
-  const tokenRes = await fetch('https://bankaccountdata.gocardless.com/api/v2/token/new/', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ secret_id: secretId, secret_key: secretKey }),
-  })
-  const { access } = await tokenRes.json()
+  if (!connections?.length) return NextResponse.json({ synced: 0, error: 'No bank connected' })
 
   let totalSynced = 0
 
   for (const conn of connections) {
-    const txnRes = await fetch(
-      `https://bankaccountdata.gocardless.com/api/v2/accounts/${conn.account_id}/transactions/`,
-      { headers: { Authorization: `Bearer ${access}` } }
-    )
-    const { transactions } = await txnRes.json()
-    const booked: any[] = transactions?.booked ?? []
+    // Use refresh token to get a fresh access token
+    const tokenRes = await fetch('https://auth.truelayer.com/connect/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        client_id: process.env.TRUELAYER_CLIENT_ID!,
+        client_secret: process.env.TRUELAYER_CLIENT_SECRET!,
+        refresh_token: conn.requisition_id,
+      }),
+    })
+    const tokens = await tokenRes.json()
+    if (!tokens.access_token) continue
 
-    for (const t of booked) {
-      const amount = Math.abs(parseFloat(t.transactionAmount?.amount ?? '0'))
-      const type: 'income' | 'expense' = parseFloat(t.transactionAmount?.amount ?? '0') > 0 ? 'income' : 'expense'
-      const description = t.remittanceInformationUnstructured ?? t.creditorName ?? ''
-      const date = t.bookingDate ?? t.valueDate
+    // Store the new tokens
+    await supabase.from('bank_connections').update({
+      institution_id: tokens.access_token,
+      requisition_id: tokens.refresh_token ?? conn.requisition_id,
+    }).eq('id', conn.id)
+
+    // Fetch last 90 days of transactions
+    const from = new Date()
+    from.setDate(from.getDate() - 90)
+    const fromStr = from.toISOString().split('T')[0]
+    const toStr = new Date().toISOString().split('T')[0]
+
+    const txnRes = await fetch(
+      `https://api.truelayer.com/data/v1/accounts/${conn.account_id}/transactions?from=${fromStr}&to=${toStr}`,
+      { headers: { Authorization: `Bearer ${tokens.access_token}` } }
+    )
+    const txnData = await txnRes.json()
+    const transactions: any[] = txnData.results ?? []
+
+    for (const t of transactions) {
+      const amount = Math.abs(t.amount)
+      const type: 'income' | 'expense' = t.amount > 0 ? 'income' : 'expense'
+      const description = t.description ?? t.merchant_name ?? ''
 
       await supabase.from('transactions').upsert({
         user_id: user.id,
-        txn_date: date,
+        txn_date: t.timestamp.split('T')[0],
         type,
         amount,
         category: type === 'income' ? 'Income' : guessCategory(description),
         description,
         source: 'revolut',
-        external_id: t.transactionId ?? `${conn.account_id}-${date}-${amount}`,
+        external_id: t.transaction_id,
       }, { onConflict: 'user_id,external_id', ignoreDuplicates: true })
 
       totalSynced++
