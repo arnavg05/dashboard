@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: clientId,
-    scope: 'accounts transactions balance',
+    scope: 'accounts transactions balance offline_access',
     redirect_uri: redirectUri,
     providers: 'revolut revolut-eu eu-oauth-all',
   })
