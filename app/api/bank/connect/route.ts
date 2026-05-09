@@ -14,5 +14,7 @@ export async function GET(request: Request) {
     providers: 'revolut revolut-eu eu-oauth-all',
   })
 
-  return NextResponse.redirect(`https://auth.truelayer-sandbox.com/?${params}`)
+  const url = `https://auth.truelayer-sandbox.com/?${params}`
+  // Debug: return the URL so we can verify it
+  return NextResponse.json({ url, redirectUri, clientId })
 }
