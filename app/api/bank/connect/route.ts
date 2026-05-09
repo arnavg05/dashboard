@@ -4,8 +4,7 @@ export async function GET(request: Request) {
   const clientId = process.env.TRUELAYER_CLIENT_ID
   if (!clientId) return NextResponse.json({ error: 'TrueLayer not configured' }, { status: 500 })
 
-  const { origin } = new URL(request.url)
-  const redirectUri = `${origin}/api/bank/callback`
+  const redirectUri = 'https://project-jamne.vercel.app/api/bank/callback'
 
   const params = new URLSearchParams({
     response_type: 'code',
