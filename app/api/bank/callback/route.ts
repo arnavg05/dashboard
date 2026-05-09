@@ -12,7 +12,7 @@ export async function GET(request: Request) {
   if (!user) return NextResponse.redirect(`${origin}/auth/login`)
 
   try {
-    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/bank/callback`
+    const redirectUri = `${origin}/api/bank/callback`
 
     const tokenRes = await fetch('https://auth.truelayer.com/connect/token', {
       method: 'POST',

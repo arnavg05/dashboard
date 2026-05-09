@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server'
 
-export async function GET() {
+export async function GET(request: Request) {
   const clientId = process.env.TRUELAYER_CLIENT_ID
   if (!clientId) return NextResponse.json({ error: 'TrueLayer not configured' }, { status: 500 })
 
-  const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/bank/callback`
+  const { origin } = new URL(request.url)
+  const redirectUri = `${origin}/api/bank/callback`
 
   const params = new URLSearchParams({
     response_type: 'code',
