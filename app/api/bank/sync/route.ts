@@ -27,7 +27,7 @@ export async function POST() {
 
   for (const conn of connections) {
     // Use refresh token to get a fresh access token
-    const tokenRes = await fetch('https://auth.truelayer-sandbox.com/connect/token', {
+    const tokenRes = await fetch('https://auth.truelayer.com/connect/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
@@ -53,7 +53,7 @@ export async function POST() {
     const toStr = new Date().toISOString().split('T')[0]
 
     const txnRes = await fetch(
-      `https://api.truelayer-sandbox.com/data/v1/accounts/${conn.account_id}/transactions?from=${fromStr}&to=${toStr}`,
+      `https://api.truelayer.com/data/v1/accounts/${conn.account_id}/transactions?from=${fromStr}&to=${toStr}`,
       { headers: { Authorization: `Bearer ${tokens.access_token}` } }
     )
     const txnData = await txnRes.json()
